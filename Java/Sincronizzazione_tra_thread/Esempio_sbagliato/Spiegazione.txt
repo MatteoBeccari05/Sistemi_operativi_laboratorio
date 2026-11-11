@@ -1,0 +1,12 @@
+Eseguendo questo programma, l'output dimostrerà un grave problema 
+logico. Sebbene i due impiegati versino ciascuno un totale di 
+3000€, il saldo finale del conto sarà quasi sempre inferiore 
+al totale teorico di 6000€ (ad esempio 4900€).   
+
+Questo errore è causato da una situazione di corsa (race condition) 
+o interferenza. Nel metodo increase della classe BankAccount, 
+un thread può leggere il saldo (temp = value), venire temporaneamente 
+sospeso dalla CPU (a causa di Simulate.HWinterrupt()), e lasciare che 
+il secondo thread legga, aggiorni e sovrascriva lo stesso saldo prima 
+che il primo thread si risvegli e completi la sua operazione con i 
+dati ormai vecchi.

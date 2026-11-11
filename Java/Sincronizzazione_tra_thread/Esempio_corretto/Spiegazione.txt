@@ -1,0 +1,23 @@
+Per evitare che i thread interferiscano durante l'accesso agli 
+oggetti condivisi, è necessario imporre un accesso esclusivo. 
+In Java, questo si ottiene aggiungendo la parola chiave synchronized 
+alla dichiarazione del metodo.
+
+class BankAccount {
+    private int value;
+    
+    BankAccount(int initialValue) {
+        value = initialValue;
+    }
+    
+    // Il modificatore synchronized permette l'accesso in mutua esclusione al blocco
+    public synchronized void increase(int amount) {
+        int temp = value;
+        
+        // Anche se si verifica l'interrupt, il thread NON rilascia il lock
+        Simulate.HWinterrupt();
+        
+        value = temp + amount;
+        System.out.println("Nuovo saldo: " + value);
+    }
+}
