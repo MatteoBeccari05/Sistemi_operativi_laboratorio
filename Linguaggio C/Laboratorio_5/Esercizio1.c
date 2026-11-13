@@ -1,84 +1,117 @@
 #include <stdio.h>
+#include <signal.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <signal.h>
-#include <sys/types.h>
+#include <string.h>
 #include <sys/wait.h>
 
-// Variabile globale per permettere al gestore del segnale di leggerla
-volatile sig_atomic_t counter = 0;
+#define MAX_PROC_NUM 20
 
-void sighandlerUSR1(int signum) 
+/* Variabili globali. */
+// static: variabile globale visibile dal solo codice di questo file sorgente.
+// volatile: variabile sempre acceduta in RAM (lettura e scrittura mai ottimizzate utilizzando registri della CPU)
+//			per esseri certi che codice principale e codice gestore del segnale vedano sempre lo stesso valore.
+// sig_atomic_t: tipo di dato che assicura che lettura e scrittura 
+//			siano eseguite in un'unica istruzione di CPU,
+//			solitamente int
+static volatile sig_atomic_t contatore = 0;
+
+void gestore(int signo) 
 {
-    printf("Figlio (PID %d): iterazioni compiute = %d\n", getpid(), counter);
+    printf("Il processo %d ha eseguito %d iterazioni per il segnale %d\n", getpid(), contatore, signo);
     exit(0);
 }
 
-int main(int argc, char *argv[]) 
+int main(int argc, char** argv) 
 {
-    int Nsec;
-    int pid;
-
-    // 1. Controllo argomenti
-    if (argc != 2) 
+	
+    int *pid;
+    int Nf, Nsec, i, status;
+	
+    /* Controllo argomenti */
+    if (argc != 3) 
     {
-        fprintf(stderr, "Uso: %s <Nsec>\n", argv[0]);
+        fprintf(stderr, "Uso: ./itercounter <num_processi> <num_secondi>\n");
         exit(1);
     }
-
-    //controllo numero positivo
-    Nsec = atoi(argv[1]);
+	
+    Nf = atoi(argv[1]);
+    if (Nf <= 0) 
+    {
+        fprintf(stderr, "Il parametro <num_processi> deve essere un intero positivo\n");
+        exit(2);
+    } 
+	
+    Nsec = atoi(argv[2]);
     if (Nsec <= 0) 
     {
-        fprintf(stderr, "Errore: Nsec deve essere un numero intero positivo.\n");
-        exit(1);
+        fprintf(stderr, "Il parametro <num_secondi> deve essere un intero positivo\n");
+        exit(4);
     }
 
-    //generazione processo figlio
-    pid = fork();
-    if(pid < 0)
+    /* Uso un array allocato dinamicamente per poter inviare SIGUSR1
+	 * a ogni singolo processo figlio attraverso la system call kill(). 
+	 * Alternativamente, inviando il segnale a tutto il gruppo di processi 
+	 * (invocando kill(0)) non ne avrei bisogno. */
+
+    pid = (int *) malloc(Nf * sizeof(int));
+
+    /* Genero i figli. */
+    for (i = 0; i < Nf; ++i) 
     {
-        perror("fork");
-        exit(1);
+        pid[i] = fork();
+        if (pid[i] < 0) 
+        {
+            perror("Errore nella fork\n");
+            exit(5);
+        }
+        else if (pid[i] == 0) 
+        {
+            /* Codice del processo figlio*/
+            free(pid);
+			
+			/* imposto la gestione di SIGUSR1 con sigaction */
+            struct sigaction sa;
+            sigemptyset(&sa.sa_mask);
+            sa.sa_flags = 0;
+            sa.sa_handler = gestore;
+            if (sigaction(SIGUSR1, &sa, NULL) < 0) 
+            {
+                perror("Errore in sigaction, SIGUSR1 figlio");
+                exit(-3);
+            }
+            
+            while (1) 
+            {
+                sleep(1);
+                contatore++;
+            }
+        }
+    } // fine for
+
+    /* Sono nel codice del processo padre */
+    sleep(Nsec);
+
+    // Invio SIGUSR1 a tutti i processi figli
+    for(i = 0; i < Nf; ++i) 
+    {
+        kill(pid[i], SIGUSR1);
     }
 
-    //codice figlio
-    if(pid == 0)
+    /* Un'alternativa più efficiente consiste nell'invocare una sola kill(0, SIGUSR1)
+     * per inivare il segnale SIGUSR1 al gruppo di processi, 
+	 * AVENDO CURA DI FAR IGNORARE AL PADRE IL SEGNALE IN QUESTIONE. */
+
+    free(pid);
+
+    /* Attendo la terminazione di tutti i figli 
+	* (alternativamente posso installare il gestore per SIGCHLD) */
+    for (i = 0; i < Nf; i++) 
     {
-        // Installazione del gestore per SIGUSR1 con sigaction
-        struct sigaction sa;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        sa.sa_handler = sighandlerUSR1;
-
-        if(sigaction(SIGUSR1, &sa, NULL) < 0)
-        {
-            perror("sigaction");
-            exit(1);
-        }
-
-        // Ciclo infinito: dorme 1 secondo e incrementa il contatore
-        while(1)
-        {
-            sleep(1);
-            counter++;
-        }
+        wait(&status);
     }
-    else  //CODICE PADRE
-    {
-        // Il padre dorme per Nsec secondi
-        sleep(Nsec);
 
-        // Invio di SIGUSR1 allo specifico processo figlio
-        if (kill(pid, SIGUSR1) < 0) 
-        {
-            perror("kill");
-            exit(1);
-        }
-
-        // Attesa della terminazione del figlio
-        wait(NULL);
-        printf("Padre: figlio terminato correttamente.\n");
-    }   
+    // Esco senza errori
     return 0;
 }

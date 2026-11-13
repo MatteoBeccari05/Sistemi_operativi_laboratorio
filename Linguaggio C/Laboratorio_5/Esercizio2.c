@@ -1,156 +1,147 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <signal.h>
-#include <time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
-// Variabile globale: ogni processo figlio avrà la propria copia indipendente
-volatile sig_atomic_t counter = 0;
+static volatile sig_atomic_t counter = 0;
+static volatile sig_atomic_t child_index;
+static volatile sig_atomic_t nChildren;
+static volatile sig_atomic_t flagTerminato = false;
 
-// Flag globale per interrompere il ciclo del padre alla ricezione di SIGINT
-volatile sig_atomic_t stop = 0;
-
-// Gestore SIGUSR1 (figlio): incrementa counter di 1
-void handler_usr1(int signum) 
+void sigusr1_handler(int sig) 
 {
-    counter++;
+    counter ++;
+    printf("Child %d: Incrementato il contatore\n", child_index);
+    printf("Nuovo valore contatore child %d: %d\n", child_index, counter);  
 }
 
-// Gestore SIGUSR2 (figlio): decrementa counter di 1
-void handler_usr2(int signum) 
+void sigusr2_handler(int sig) 
 {
-    counter--;
+    counter --;
+    printf("Child %d: Decrementato il contatore\n", child_index);
+    printf("Nuovo valore contatore child %d: %d\n", child_index, counter);
 }
 
-// Gestore SIGINT (figlio): stampa il valore di counter e termina
-void handler_int_figlio(int signum) 
-{
-    printf("\nFiglio (PID %d): counter finale = %d\n", getpid(), counter);
+void sigintchild(int sig)
+{  
+    printf("Child %d: Terminazione con valore counter %d\n", child_index, counter);
     exit(0);
 }
 
-// Gestore SIGINT (padre): segnala al ciclo principale di fermarsi
-void handler_int_padre(int signum) 
-{
-    stop = 1;
+void sigintparenthandler(int sig) 
+{ 
+    printf("Ricevuto CTRL-C --> Attendo sincronizzazione con i children...\n");
+    int status; 
+    for(int i = 0; i < nChildren; i++)
+    {
+        wait(&status);
+    }
+    
+    printf("Tutti i children terminati, chiudo il programma\n");
+    flagTerminato = true;
 }
 
-int main(int argc, char **argv)
+int main(int argc, char *argv[]) 
 {
-    int Nf;
-    int *pids;
+    // Definisco handler dei segnali e vettore dove salvare pid children
+    struct sigaction sigint, sigusr1, sigusr2, sigintparent;
+    int *children;
 
-    // 1. Controllo argomenti
+    //Controllo parametri 
     if (argc != 2) 
     {
-        fprintf(stderr, "Uso: %s <Nf>\n", argv[0]);
+        fprintf(stderr, "Uso corretto: ./%s <nChildren>\n", argv[0]);
         exit(1);
     }
-
-    Nf = atoi(argv[1]);
-    if (Nf <= 0) 
+    if (atoi(argv[1]) <= 0) 
     {
-        fprintf(stderr, "Errore: Nf deve essere un intero positivo.\n");
-        exit(1);
+        fprintf(stderr, "Ci deve essere almeno un child da poter generare\n");
+        exit(2);
     }
 
-    // Allocazione array per memorizzare i PID degli Nf figli
-    pids = malloc(Nf * sizeof(int));
-    if (pids == NULL) 
-    {
-        perror("malloc");
-        exit(1);
-    }
-
-    // 2. Generazione degli Nf processi figli
-    for (int i = 0; i < Nf; i++) 
+    nChildren = atoi(argv[1]);
+    children = (int *) malloc(nChildren * sizeof(int));
+    
+    // Creo processi children pari a quanti inseriti dall'utente nel parametro
+    for (int i = 0; i < nChildren; i++) 
     {
         int pid = fork();
-        if (pid < 0) 
-        {
-            perror("fork");
-            exit(1);
-        }
-
         if (pid == 0) 
         {
-            // --- CODICE DEL FIGLIO ---
-            free(pids); // Il figlio non usa l'array dei PID
+            // Child process
+			free(children);
+            child_index = i;
 
-            // Installazione gestori per SIGUSR1, SIGUSR2 e SIGINT con signal()
-            if (signal(SIGUSR1, handler_usr1) == SIG_ERR) 
+            sigemptyset(&sigint.sa_mask);
+            sigint.sa_flags = 0;
+            sigint.sa_handler = sigintchild;
+            if (sigaction(SIGINT, &sigint, NULL) == -1) 
             {
-                perror("signal SIGUSR1");
-                exit(1);
+                perror("Errore nell'installazione del gestore di SIGINT");
+                exit(-11);
             }
 
-            if (signal(SIGUSR2, handler_usr2) == SIG_ERR) 
+            sigemptyset(&sigusr1.sa_mask);
+            sigusr1.sa_flags = 0;
+            sigusr1.sa_handler = sigusr1_handler;
+            if (sigaction(SIGUSR1, &sigusr1, NULL) == -1) 
             {
-                perror("signal SIGUSR2");
-                exit(1);
+                perror("Errore nell'installazione del gestore di SIGUSR1");
+                exit(-11);
             }
 
-            if (signal(SIGINT, handler_int_figlio) == SIG_ERR) 
+            sigemptyset(&sigusr2.sa_mask);
+            sigusr2.sa_flags = 0;
+            sigusr2.sa_handler = sigusr2_handler;
+            if (sigaction(SIGUSR2, &sigusr2, NULL) == -1) 
             {
-                perror("signal SIGINT figlio");
-                exit(1);
+                perror("Errore nell'installazione del gestore di SIGUSR2");
+                exit(-11);
             }
-
-            // Attesa passiva dei segnali
+			
             while (1) 
             {
+                /* Attraverso pause() il processo dorme in attesa di ricevere un segnale.
+                * Una volta terminata l'esecuzione dell'handler corrispondente 
+				* il processo tornera' in attesa di ricevere il prossimo segnale da gestire*/
                 pause();
             }
         } 
-        else 
+        else if (pid < 0) 
         {
-            // Il padre salva il PID del figlio appena creato
-            pids[i] = pid;
+            printf("Error nella fork child %d\n", i);
+            exit(3);
         }
+
+        // Salvo tutti i children in un vettore per poi poterli selezionare casualmente
+        children[i] = pid;
+        
+    } // fine for
+
+    // Codice Parent
+	// Installo gestore segnale SIGINT 
+	sigemptyset(&sigintparent.sa_mask);
+    sigintparent.sa_flags = 0;
+    sigintparent.sa_handler = sigintparenthandler;
+    if (sigaction(SIGINT, &sigintparent, NULL) == -1) 
+    {
+        perror("Errore nell'installazione del gestore di SIGINT");
+        exit(-11);
     }
 
-    // --- CODICE DEL PADRE ---
-
-    // Installazione gestore SIGINT per il padre con signal()
-    if (signal(SIGINT, handler_int_padre) == SIG_ERR) 
+    while (!flagTerminato) 
     {
-        perror("signal SIGINT padre");
-        exit(1);
-    }
-
-    // Inizializzazione generatore numeri casuali
-    srand(time(NULL));
-
-    // Ogni 2 secondi seleziona casualmente un figlio e un segnale tra SIGUSR1 e SIGUSR2
-    while (!stop) 
-    {
+        // Scelgo casualmente segnale SIGUSR1/SIGUSR2 e child a cui mandarlo
+		int random_index = rand() % nChildren;
+        int sig = ( ( rand() % 2 ) == 0 ? SIGUSR1 : SIGUSR2 );
+        kill(children[random_index], sig);
         sleep(2);
-        if (stop) 
-        {
-            break;
-        }
-
-        int idx = rand() % Nf;
-        int sig = (rand() % 2 == 0) ? SIGUSR1 : SIGUSR2;
-
-        printf("Padre: invio %s al figlio %d (PID %d)\n",
-               (sig == SIGUSR1) ? "SIGUSR1" : "SIGUSR2", idx, pids[idx]);
-
-        if (kill(pids[idx], sig) < 0) 
-        {
-            perror("kill");
-        }
     }
-
-    // Attesa della terminazione di tutti i figli prima di chiudere il padre
-    for (int i = 0; i < Nf; i++) 
-    {
-        wait(NULL);
-    }
-
-    free(pids);
-    printf("Padre: tutti gli %d figli sono terminati. Esco.\n", Nf);
+	
+    free(children);
+	
     return 0;
 }
