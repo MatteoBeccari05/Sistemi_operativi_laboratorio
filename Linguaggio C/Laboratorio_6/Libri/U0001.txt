@@ -1,0 +1,8 @@
+20250115,20250210,Il nome della rosa,Umberto Eco,Romanzo storico
+20260301,NON RESTITUITO,Sistemi Operativi Moderni,Andrew S. Tanenbaum,Informatica
+20241120,20241215,1984,George Orwell,Distopia
+20260210,NON RESTITUITO,Dune,Frank Herbert,Fantascienza
+20250905,20251001,Il signore degli anelli,J.R.R. Tolkien,Fantasy
+20260118,NON RESTITUITO,Clean Code,Robert C. Martin,Informatica
+20260312,NON RESTITUITO,Neuromante,William Gibson,Cyberpunk
+20250522,NON RESTITUITO,Cent'anni di solitudine,Gabriel Garcia Marquez,Realismo magico

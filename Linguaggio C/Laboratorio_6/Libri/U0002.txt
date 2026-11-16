@@ -1,0 +1,4 @@
+20251201,NON RESTITUITO,Fondazione,Isaac Asimov,Fantascienza
+20250814,20250902,La coscienza di Zeno,Italo Svevo,Romanzo psicologico
+20260228,NON RESTITUITO,The C Programming Language,Brian W. Kernighan,Informatica
+20260105,20260125,Fahrenheit 451,Ray Bradbury,Distopia
