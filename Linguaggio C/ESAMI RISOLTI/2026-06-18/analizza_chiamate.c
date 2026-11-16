@@ -1,0 +1,10 @@
+0900,op_101,chi_6601,risolta
+0930,op_104,chi_6602,trasferita
+1015,op_101,chi_6603,risolta
+1100,op_102,chi_6604,non_risolta
+1130,op_101,chi_6605,trasferita
+1200,op_101,chi_6606,risolta
+1330,op_103,chi_6607,risolta
+1500,op_101,chi_6608,non_risolta
+1630,op_101,chi_6609,risolta
+1730,op_104,chi_6610,risolta
