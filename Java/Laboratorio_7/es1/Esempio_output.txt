@@ -1,0 +1,10 @@
+Inserire il numero di thread da creare: 5
+Thread: Thread-1 con valore:  95.91295408401311
+Thread: Thread-4 con valore:  255.0385650442912
+Thread: Thread-3 con valore:  212.054442727872
+Thread: Thread-2 con valore:  161.0682726096137
+Thread: Thread-0 con valore:  140.47437644640831
+Valore finale accumulatore: 255.0385650442912
+
+Il valore dell'accumulatore sarà il valore dell'ultimo thread perchè non 
+sono sincronizzati
